@@ -236,16 +236,93 @@ def page_dogs():
     if st.button("Seed demo dogs"):
         seed_demo_dogs()
 
+    # Edit dogs section
+    st.subheader("Edit dog")
+    dogs_edit_df = fetch_df("SELECT id, name, size, plays_hard, shy, intact, notes, photo_path FROM dogs ORDER BY name")
+    if dogs_edit_df.empty:
+        st.caption("No dogs to edit.")
+    else:
+        sel_id = st.selectbox(
+            "Choose a dog",
+            options=dogs_edit_df["id"].tolist(),
+            format_func=lambda i: dogs_edit_df.loc[dogs_edit_df["id"]==i, "name"].values[0]
+        )
+        rec = dogs_edit_df.loc[dogs_edit_df["id"]==sel_id].iloc[0]
+        ec1, ec2, ec3, ec4 = st.columns([2,1,2,1])
+        new_name = ec1.text_input("Name *", value=str(rec["name"]))
+        new_size = ec2.selectbox("Size", ["S","M","L"], index=["S","M","L"].index(rec["size"] or "M"))
+        temp_default = 1 if rec["plays_hard"] else (2 if rec["shy"] else 0)
+        new_temperament = ec3.radio("Temperament", ["Neither", "Plays hard", "Shy"], index=temp_default, horizontal=True, key=f"edit_temp_{sel_id}")
+        new_intact = ec4.checkbox("Intact", value=bool(rec["intact"]), key=f"edit_intact_{sel_id}")
+        new_notes = st.text_area("Notes", value=rec["notes"] or "", key=f"edit_notes_{sel_id}")
+        st.caption(f"Current photo: {rec['photo_path'] or 'None'}")
+        new_photo = st.file_uploader("Replace photo (optional)", type=["png","jpg","jpeg"], key=f"edit_photo_{sel_id}")
+
+        if st.button("Update dog", key=f"update_dog_{sel_id}"):
+            if not new_name.strip():
+                st.error("Name is required.")
+            else:
+                try:
+                    photo_path = rec["photo_path"]
+                    if new_photo is not None:
+                        fn = f"{new_name.strip().replace(' ','_')}.jpg"
+                        out = os.path.join(IMAGES_DIR, fn)
+                        with open(out, "wb") as f:
+                            f.write(new_photo.getbuffer())
+                        photo_path = out
+                    new_ph = int(new_temperament == "Plays hard")
+                    new_shy = int(new_temperament == "Shy")
+                    conn = get_conn()
+                    conn.execute(
+                        """
+                        UPDATE dogs
+                        SET name=?, plays_hard=?, shy=?, intact=?, size=?, notes=?, photo_path=?
+                        WHERE id=?
+                        """,
+                        (
+                            new_name.strip(), new_ph, new_shy, int(bool(new_intact)),
+                            new_size, new_notes, photo_path, int(sel_id)
+                        )
+                    )
+                    conn.commit()
+                    st.success(f"Updated {new_name}.")
+                    st.rerun()
+                except sqlite3.IntegrityError as e:
+                    st.error(f"Failed to update dog: {e}")
+
+    # Delete dogs section
+    st.subheader("Delete dogs")
+    dogs_for_delete = fetch_df("SELECT id, name FROM dogs ORDER BY name")
+    if dogs_for_delete.empty:
+        st.caption("No dogs to delete.")
+    else:
+        to_delete = st.multiselect(
+            "Select dogs to delete",
+            options=list(dogs_for_delete["id"]),
+            format_func=lambda i: dogs_for_delete.loc[dogs_for_delete["id"]==i, "name"].values[0]
+        )
+        st.warning(
+            "Deleting a dog will also remove their relationships, group memberships, and attendance (via cascading deletes)."
+        )
+        confirm_del = st.checkbox("I understand and want to delete the selected dogs.", key="confirm_delete_dogs")
+        if st.button("Delete selected dogs", disabled=(len(to_delete)==0 or not confirm_del)):
+            conn = get_conn()
+            cur = conn.cursor()
+            cur.executemany("DELETE FROM dogs WHERE id=?", [(int(i),) for i in to_delete])
+            conn.commit()
+            st.success(f"Deleted {len(to_delete)} dog(s).")
+            st.rerun()
+
 def seed_demo_dogs():
     conn = get_conn()
     cur = conn.cursor()
-    for n in ["Callie","Merle","Archie","Ryder","Pickles"]:
+    names = ["Callie","Merle","Archie","Ryder","Pickles"]
+    for n in names:
         cur.execute("INSERT OR IGNORE INTO dogs(name) VALUES(?)", (n,))
+    conn.commit()
     ids = dict(fetch_df("SELECT id, name FROM dogs").set_index("name")["id"])
     def setrel(a,b,status):
-        a_id, b_id = sorted([ids[a], ids[b]])
-        cur.execute("""INSERT OR REPLACE INTO relationships(dog_a_id,dog_b_id,status)
-                       VALUES(?,?,?)""", (a_id,b_id,status))
+        upsert_relationship(ids[a], ids[b], status)
     # Based on the example
     setrel("Callie","Archie","friend")
     setrel("Callie","Merle","friend")
@@ -289,9 +366,10 @@ def page_today():
         st.info("Add dogs first.")
         return
 
-    dflt_date = date.today().isoformat()
     c1, c2 = st.columns(2)
-    selected_date = c1.text_input("Date (YYYY-MM-DD)", value=dflt_date)
+    selected_date_obj = c1.date_input("Date", value=date.today(), min_value=date.today())
+    # Normalize to string for DB/session use
+    selected_date = selected_date_obj.isoformat() if hasattr(selected_date_obj, "isoformat") else str(selected_date_obj)
     slot = c2.selectbox("Slot", ["AM","PM","Midday","Custom"])
     if slot == "Custom":
         slot = st.text_input("Custom slot name")
@@ -318,31 +396,55 @@ def page_today():
         groups, leftovers = suggest_groups(selected, rules, target_size)
         if not groups:
             st.warning("No compatible groups with current rules.")
-        for i, grp in enumerate(groups, start=1):
+        # Clear previous selection checkboxes
+        for k in list(st.session_state.keys()):
+            if str(k).startswith("sel_grp_"):
+                del st.session_state[k]
+        st.session_state["last_groups"] = groups
+        st.session_state["last_selection"] = selected
+        st.session_state["last_date"] = selected_date
+        st.session_state["last_slot"] = slot
+
+    # Allow selecting specific groups to save
+    if "last_groups" in st.session_state and st.session_state["last_groups"]:
+        st.subheader("Review suggested groups")
+        for i, grp in enumerate(st.session_state["last_groups"], start=1):
             names = fetch_df(
                 "SELECT name FROM dogs WHERE id IN ({})".format(",".join("?"*len(grp["dogs"]))),
                 grp["dogs"]
             )["name"].tolist()
-            st.success(f"Group {i} — {grp['status']}: " + ", ".join(names))
+            st.checkbox(
+                f"Save Group {i} — {grp['status']}: " + ", ".join(names),
+                value=True,
+                key=f"sel_grp_{i}"
+            )
+        # Show leftovers based on the last selection
+        all_in_groups = {d for grp in st.session_state["last_groups"] for d in grp["dogs"]}
+        leftovers = sorted(set(st.session_state.get("last_selection", [])) - all_in_groups)
         if leftovers:
             names = fetch_df(
                 "SELECT name FROM dogs WHERE id IN ({})".format(",".join("?"*len(leftovers))),
                 leftovers
             )["name"].tolist()
             st.info("Leftovers: " + ", ".join(names))
-        st.session_state["last_groups"] = groups
-        st.session_state["last_selection"] = selected
-        st.session_state["last_date"] = selected_date
-        st.session_state["last_slot"] = slot
 
-    if "last_groups" in st.session_state and st.button("Save these groups"):
-        save_groups(
-            st.session_state["last_groups"],
-            st.session_state["last_selection"],
-            st.session_state["last_date"],
-            st.session_state["last_slot"]
-        )
-        st.success("Saved groups + attendance.")
+        if st.button("Save selected groups"):
+            selected_groups = []
+            selected_ids = set()
+            for i, grp in enumerate(st.session_state["last_groups"], start=1):
+                if st.session_state.get(f"sel_grp_{i}"):
+                    selected_groups.append(grp)
+                    selected_ids.update(grp["dogs"])
+            if not selected_groups:
+                st.warning("Select at least one group to save.")
+            else:
+                save_groups(
+                    selected_groups,
+                    sorted(selected_ids),
+                    st.session_state["last_date"],
+                    st.session_state["last_slot"]
+                )
+                st.success(f"Saved {len(selected_groups)} group(s) and attendance.")
 
 def page_history():
     st.header("Saved Groups (History)")
@@ -374,10 +476,54 @@ def page_history():
         st.write(", ".join(names) if names else "_(empty)_")
         st.markdown("---")
 
+    # Per-group deletion controls
+    st.subheader("Delete specific groups")
+    st.caption("Select groups to remove from this date/slot. Attendance remains unchanged.")
+    del_keys = []
+    for i, gname in enumerate(groups_df["group_name"].tolist(), start=1):
+        key = f"del_grp_{sel_date}_{sel_slot}_{i}"
+        del_keys.append((key, gname))
+        st.checkbox(f"Delete {gname}", key=key, value=False)
+    confirm_groups = st.checkbox(
+        "I understand selected groups and their members will be permanently removed.",
+        key=f"confirm_del_groups_{sel_date}_{sel_slot}"
+    )
+    if st.button("Delete selected groups", disabled=not confirm_groups):
+        to_delete = [g for k, g in del_keys if st.session_state.get(k)]
+        if not to_delete:
+            st.warning("Select at least one group to delete.")
+        else:
+            conn = get_conn()
+            cur = conn.cursor()
+            for gname in to_delete:
+                cur.execute("DELETE FROM group_members WHERE date=? AND slot=? AND group_name=?",
+                            (sel_date, sel_slot, gname))
+                cur.execute("DELETE FROM groups WHERE date=? AND slot=? AND group_name=?",
+                            (sel_date, sel_slot, gname))
+            conn.commit()
+            st.success(f"Deleted {len(to_delete)} group(s) from {sel_date} / {sel_slot}.")
+            # Refresh the page to reflect deletions
+            st.rerun()
+
     if st.button("Export CSV"):
         out = os.path.join(APP_DIR, f"groups_{sel_date}_{sel_slot}.csv")
         members_df.to_csv(out, index=False)
         st.success(f"Exported to {out}")
+
+    st.subheader("Danger zone")
+    st.warning(
+        "Deleting history will permanently remove groups, group members, and attendance for the selected date and slot.")
+    confirm = st.checkbox("I understand and want to delete this date/slot.")
+    if st.button("Delete selected date/slot", disabled=not confirm):
+        conn = get_conn()
+        cur = conn.cursor()
+        # Remove in safe order since there are no explicit FKs from group_members to groups
+        cur.execute("DELETE FROM group_members WHERE date=? AND slot=?", (sel_date, sel_slot))
+        cur.execute("DELETE FROM groups WHERE date=? AND slot=?", (sel_date, sel_slot))
+        cur.execute("DELETE FROM attendance WHERE date=? AND slot=?", (sel_date, sel_slot))
+        conn.commit()
+        st.success(f"Deleted history for {sel_date} / {sel_slot}.")
+        st.rerun()
 
 # --- App entry ---
 def main():
