@@ -231,7 +231,7 @@ def page_dogs():
                 conn.commit()
                 st.success(f"Added {name}")
 
-    df = fetch_df("SELECT id, name, size, plays_hard, shy, intact, notes FROM dogs ORDER BY name")
+    df = fetch_df("SELECT name, size, plays_hard, shy, intact, notes FROM dogs ORDER BY name")
     st.dataframe(df, use_container_width=True)
     if st.button("Seed demo dogs"):
         seed_demo_dogs()
@@ -368,11 +368,18 @@ def page_today():
 
     c1, c2 = st.columns(2)
     selected_date_obj = c1.date_input("Date", value=date.today(), min_value=date.today())
-    # Normalize to string for DB/session use
+    # Custom time slot: choose start and end times (12-hour format)
+    sc1, sc2, sc3 = c2.columns([1,1,1])
+    start_hour = sc1.selectbox("Start hour", list(range(1,13)), index=8)
+    start_minute = sc2.selectbox("Start minute", [f"{m:02d}" for m in range(0,60)], index=0)
+    start_ampm = sc3.selectbox("Start AM/PM", ["AM","PM"], index=0)
+    ec1, ec2, ec3 = c2.columns([1,1,1])
+    end_hour = ec1.selectbox("End hour", list(range(1,13)), index=11)
+    end_minute = ec2.selectbox("End minute", [f"{m:02d}" for m in range(0,60)], index=0)
+    end_ampm = ec3.selectbox("End AM/PM", ["AM","PM"], index=0)
+    slot = f"{start_hour}:{start_minute} {start_ampm} - {end_hour}:{end_minute} {end_ampm}"
+    # Normalize date to string for DB/session use
     selected_date = selected_date_obj.isoformat() if hasattr(selected_date_obj, "isoformat") else str(selected_date_obj)
-    slot = c2.selectbox("Slot", ["AM","PM","Midday","Custom"])
-    if slot == "Custom":
-        slot = st.text_input("Custom slot name")
 
     selected = st.multiselect("Who is here today?",
                               options=list(dogs["id"]),
