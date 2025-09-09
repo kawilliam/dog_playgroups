@@ -235,6 +235,116 @@ def page_dogs():
     st.dataframe(df, use_container_width=True)
     if st.button("Seed demo dogs"):
         seed_demo_dogs()
+        st.rerun()
+
+    # CSV Import section
+    st.subheader("Import dogs from CSV")
+    st.caption("Columns supported: name, size (S/M/L), plays_hard, shy, intact, notes. Booleans accept true/false/1/0/yes/no/on/off/y/n/t/f/enabled/disabled. Optional: temperament (Neither/Plays hard/Shy). Existing names are updated.")
+    csv_file = st.file_uploader("Upload CSV", type=["csv"], key="dogs_csv_upload")
+    if csv_file is not None:
+        try:
+            csv_df = pd.read_csv(csv_file)
+        except Exception as e:
+            st.error(f"Failed to read CSV: {e}")
+            csv_df = None
+
+        if csv_df is not None and not csv_df.empty:
+            # Normalize columns to snake_case lowercase for matching
+            norm_map = {c: c.strip().lower().replace(" ", "_").replace("-", "_") for c in csv_df.columns}
+            csv_df = csv_df.rename(columns=norm_map)
+
+            preview_cols = [c for c in [
+                "name", "size", "temperament", "plays_hard", "shy", "intact", "notes"
+            ] if c in csv_df.columns]
+            st.write("Preview (first 10 rows):")
+            st.dataframe(csv_df[preview_cols].head(10), use_container_width=True)
+
+            def as_bool(v):
+                # Robust boolean parser for common spellings
+                if pd.isna(v):
+                    return False
+                if isinstance(v, bool):
+                    return v
+                if isinstance(v, (int, float)):
+                    try:
+                        return bool(int(v))
+                    except Exception:
+                        return False
+                s = str(v).strip().lower()
+                true_vals = {"1", "true", "t", "yes", "y", "on", "enable", "enabled", "active", "checked", "x", "✔", "✓"}
+                false_vals = {"0", "false", "f", "no", "n", "off", "disable", "disabled", "inactive", "unchecked", "", "none", "null", "nan"}
+                if s in true_vals:
+                    return True
+                if s in false_vals:
+                    return False
+                # default: treat unknown as False
+                return False
+
+            if st.button("Import CSV rows", key="import_dogs_csv_btn"):
+                existing = set(fetch_df("SELECT name FROM dogs")["name"].tolist())
+                added = updated = skipped = 0
+                errors = []
+                conn = get_conn()
+                for idx, row in csv_df.iterrows():
+                    name = str(row.get("name", "")).strip()
+                    if not name:
+                        skipped += 1
+                        errors.append(f"Row {idx+1}: missing name")
+                        continue
+
+                    # Determine temperament/flags
+                    temperament = str(row.get("temperament", "")).strip()
+                    if temperament:
+                        ph = temperament.lower() == "plays hard"
+                        shy = temperament.lower() == "shy"
+                    else:
+                        ph = as_bool(row.get("plays_hard", 0))
+                        shy = as_bool(row.get("shy", 0))
+
+                    if ph and shy:
+                        skipped += 1
+                        errors.append(f"Row {idx+1} ({name}): cannot be both plays_hard and shy")
+                        continue
+
+                    intact = as_bool(row.get("intact", 0))
+                    size = str(row.get("size", "M")).strip().upper()
+                    size = size if size in {"S","M","L"} else "M"
+                    notes = row.get("notes", None)
+                    if isinstance(notes, float) and pd.isna(notes):
+                        notes = None
+
+                    try:
+                        # Upsert by unique name, preserve existing photo_path if not provided
+                        conn.execute(
+                            """
+                            INSERT INTO dogs(name, plays_hard, shy, intact, size, notes, photo_path)
+                            VALUES(?,?,?,?,?,?,NULL)
+                            ON CONFLICT(name) DO UPDATE SET
+                              plays_hard=excluded.plays_hard,
+                              shy=excluded.shy,
+                              intact=excluded.intact,
+                              size=excluded.size,
+                              notes=excluded.notes,
+                              photo_path=COALESCE(excluded.photo_path, dogs.photo_path)
+                            """,
+                            (name, int(ph), int(shy), int(intact), size, notes)
+                        )
+                        if name in existing:
+                            updated += 1
+                        else:
+                            added += 1
+                            existing.add(name)
+                    except Exception as e:
+                        skipped += 1
+                        errors.append(f"Row {idx+1} ({name}): {e}")
+
+                conn.commit()
+                st.success(f"Import complete — Added: {added}, Updated: {updated}, Skipped: {skipped}")
+                if errors:
+                    with st.expander("Show import messages"):
+                        for msg in errors[:200]:
+                            st.write("- ", msg)
+                st.rerun()
 
     # Edit dogs section
     st.subheader("Edit dog")
