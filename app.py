@@ -232,6 +232,9 @@ def page_dogs():
                 st.success(f"Added {name}")
 
     df = fetch_df("SELECT name, size, plays_hard, shy, intact, notes FROM dogs ORDER BY name")
+    bool_cols = ["plays_hard", "shy", "intact"]
+    if not df.empty:
+        df[bool_cols] = df[bool_cols].applymap(lambda v: "Yes" if bool(v) else "No")
     st.dataframe(df, use_container_width=True)
     if st.button("Seed demo dogs"):
         seed_demo_dogs()
