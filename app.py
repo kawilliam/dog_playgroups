@@ -1,10 +1,10 @@
 import streamlit as st
 
 from db import init_db
-from pages.dogs import page_dogs
-from pages.history import page_history
-from pages.relationships import page_relationships
-from pages.today import page_today
+from app_pages.dogs import page_dogs
+from app_pages.history import page_history
+from app_pages.relationships import page_relationships
+from app_pages.today import page_today
 
 def main():
     st.set_page_config(page_title="Dog Playgroups", page_icon="🐶", layout="wide")
