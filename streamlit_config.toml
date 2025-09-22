@@ -1,2 +1,10 @@
 [global]
 developmentMode = false
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = false
+port = 8510
+address = "localhost"
