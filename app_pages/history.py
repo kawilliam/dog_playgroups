@@ -1,8 +1,8 @@
-import os
+from pathlib import Path
 
 import streamlit as st
 
-from config import APP_DIR
+from config import DATA_DIR
 from db import fetch_df, get_conn
 
 def page_history():
@@ -70,7 +70,7 @@ def page_history():
             st.rerun()
 
     if st.button("Export CSV"):
-        out = os.path.join(APP_DIR, f"groups_{sel_date}_{sel_slot}.csv")
+        out = Path(DATA_DIR) / f"groups_{sel_date}_{sel_slot}.csv"
         members_df.to_csv(out, index=False)
         st.success(f"Exported to {out}")
 

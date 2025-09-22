@@ -1,0 +1,37 @@
+name: Build desktop apps
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags: ['v*']
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Build (PyInstaller)
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --windowed --onedir `
+            --name "Dog Playgroups" `
+            --collect-all streamlit --collect-all altair --collect-all pydeck `
+            --add-data "app.py;." `
+            --add-data "images;images" `
+            --add-data "data;data" `
+            launch.py
+      - name: Zip artifact
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\Dog Playgroups\*" -DestinationPath "Dog_Playgroups_Windows.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dog_Playgroups_Windows
+          path: Dog_Playgroups_Windows.zip

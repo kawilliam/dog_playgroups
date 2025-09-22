@@ -4,7 +4,7 @@ from itertools import combinations
 import streamlit as st
 
 from db import fetch_df
-from relationships_service import get_relationship, upsert_relationship
+from relationships import get_relationship, upsert_relationship
 
 def page_relationships():
     st.header("Relationships")
