@@ -33,5 +33,5 @@ jobs:
           Compress-Archive -Path "dist\Dog Playgroups\*" -DestinationPath "Dog_Playgroups_Windows.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: Dog_Playgroups_Windows
+          name: Dog_Playgroups_Windows_${{ github.run_number }}_${{ github.sha }}
           path: Dog_Playgroups_Windows.zip
