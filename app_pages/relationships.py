@@ -1,6 +1,7 @@
 import html
 from itertools import combinations
 
+import pandas as pd
 import streamlit as st
 
 from db import fetch_df
@@ -87,3 +88,107 @@ def page_relationships():
         else:
             for idx, (name_a, name_b) in enumerate(pairs, start=1):
                 st.write(f"{idx}. {name_a} ↔ {name_b}")
+
+    st.subheader("Import relationships from CSV")
+    st.caption(
+        "CSV columns expected: dog_a, dog_b, status (friend/foe/unknown). Additional columns are ignored."
+    )
+    csv_file = st.file_uploader("Upload relationships CSV", type=["csv"], key="rel_csv_upload")
+    if csv_file is not None:
+        try:
+            csv_df = pd.read_csv(csv_file)
+        except Exception as exc:
+            st.error(f"Failed to read CSV: {exc}")
+            csv_df = None
+
+        if csv_df is not None and not csv_df.empty:
+            renamed = {
+                c: c.strip().lower().replace(" ", "_") for c in csv_df.columns
+            }
+            csv_df = csv_df.rename(columns=renamed)
+            required = {"dog_a", "dog_b", "status"}
+            if not required.issubset(csv_df.columns):
+                missing = ", ".join(sorted(required - set(csv_df.columns)))
+                st.error(f"CSV missing required column(s): {missing}")
+            else:
+                preview = csv_df[list(required)].copy()
+                st.dataframe(preview.head(20), use_container_width=True)
+
+                id_by_name = {name.lower(): did for did, name in name_by_id.items()}
+
+                def normalize_status(value: str):
+                    if pd.isna(value):
+                        return None
+                    s = str(value).strip().lower()
+                    mapping = {
+                        "friend": "friend",
+                        "friends": "friend",
+                        "foe": "foe",
+                        "enemy": "foe",
+                        "unknown": "unknown",
+                        "unsure": "unknown",
+                    }
+                    return mapping.get(s)
+
+                if st.button("Import relationships", key="import_rel_csv_btn"):
+                    created = changed = unchanged = skipped = 0
+                    errors = []
+                    existing_rel = fetch_df(
+                        "SELECT dog_a_id, dog_b_id, status FROM relationships"
+                    )
+                    existing_map = {
+                        tuple(sorted((int(row["dog_a_id"]), int(row["dog_b_id"])))): row["status"]
+                        for _, row in existing_rel.iterrows()
+                    }
+                    for idx, row in csv_df.iterrows():
+                        name_a = str(row.get("dog_a", "")).strip()
+                        name_b = str(row.get("dog_b", "")).strip()
+                        status_val = normalize_status(row.get("status"))
+
+                        if not name_a or not name_b:
+                            skipped += 1
+                            errors.append(f"Row {idx+1}: missing dog name(s)")
+                            continue
+                        if name_a.lower() == name_b.lower():
+                            skipped += 1
+                            errors.append(f"Row {idx+1} ({name_a}): cannot relate dog to itself")
+                            continue
+                        if status_val is None:
+                            skipped += 1
+                            errors.append(
+                                f"Row {idx+1} ({name_a} ↔ {name_b}): invalid status '{row.get('status')}'"
+                            )
+                            continue
+
+                        ida = id_by_name.get(name_a.lower())
+                        idb = id_by_name.get(name_b.lower())
+                        if ida is None or idb is None:
+                            skipped += 1
+                            errors.append(
+                                f"Row {idx+1} ({name_a} ↔ {name_b}): dog not found in database"
+                            )
+                            continue
+
+                        key = tuple(sorted((ida, idb)))
+                        previous = existing_map.get(key)
+                        upsert_relationship(ida, idb, status_val)
+                        existing_map[key] = status_val
+                        if previous is None:
+                            created += 1
+                        elif previous == status_val:
+                            unchanged += 1
+                        else:
+                            changed += 1
+
+                    summary = (
+                        "Import complete — Created: {created}, Changed: {changed}, "
+                        "Unchanged: {unchanged}, Skipped: {skipped}"
+                    ).format(
+                        created=created, changed=changed, unchanged=unchanged, skipped=skipped
+                    )
+                    st.success(summary)
+                    if errors:
+                        with st.expander("Show import messages"):
+                            for msg in errors[:200]:
+                                st.write("-", msg)
+                    st.rerun()

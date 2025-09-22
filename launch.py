@@ -8,7 +8,6 @@ from pathlib import Path
 BASE = getattr(sys, "_MEIPASS", p.abspath(p.dirname(__file__)))
 APP = p.join(BASE, "app.py")
 CFG = p.join(BASE, "streamlit_config.toml")
-PORT = "8510"
 
 log_dir = Path.home() / "Documents" / "DogPlaygroupsData" / "logs"
 log_dir.mkdir(parents=True, exist_ok=True)
@@ -46,13 +45,6 @@ os.environ["STREAMLIT_CONFIG_FILE"] = CFG
 os.environ.pop("STREAMLIT_SERVER_PORT", None)
 os.environ["STREAMLIT_GLOBAL_DEVELOPMENTMODE"] = "false"
 os.environ["STREAMLIT_BROWSER_GATHER_USAGE_STATS"] = "false"
-
-url = f"http://localhost:{PORT}"
-try:
-    webbrowser.open(url)
-    print("Opening:", url)
-except Exception as exc:
-    print("Browser open failed:", exc)
 
 from streamlit.web.cli import main as st_main
 sys.argv = ["streamlit", "run", APP]
