@@ -1,3 +1,9 @@
+import os
+import sys
+
+# ensure bundled executable can import sibling modules
+sys.path.insert(0, os.path.dirname(__file__))
+
 import streamlit as st
 
 from db import init_db

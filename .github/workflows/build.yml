@@ -25,6 +25,10 @@ jobs:
             --collect-all streamlit --collect-all altair --collect-all pydeck `
             --collect-submodules app_pages `
             --add-data "app.py;." `
+            --add-data "db.py;." `
+            --add-data "grouping.py;." `
+            --add-data "relationships.py;." `
+            --add-data "config.py;." `
             --add-data "streamlit_config.toml;." `
             --add-data "images;images" `
             --add-data "data;data" `
@@ -38,6 +42,10 @@ jobs:
             --collect-all streamlit --collect-all altair --collect-all pydeck `
             --collect-submodules app_pages `
             --add-data "app.py;." `
+            --add-data "db.py;." `
+            --add-data "grouping.py;." `
+            --add-data "relationships.py;." `
+            --add-data "config.py;." `
             --add-data "streamlit_config.toml;." `
             --add-data "images;images" `
             --add-data "data;data" `
