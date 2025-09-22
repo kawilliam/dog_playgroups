@@ -23,12 +23,26 @@ jobs:
           pyinstaller --noconfirm --windowed --onedir `
             --name "Dog Playgroups" `
             --collect-all streamlit --collect-all altair --collect-all pydeck `
+            --collect-submodules app_pages `
             --add-data "app.py;." `
             --add-data "streamlit_config.toml;." `
             --add-data "images;images" `
             --add-data "data;data" `
             launch.py
-      - name: Zip artifact
+
+      - name: Build (PyInstaller DEBUG)
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --onedir `
+            --name "Dog Playgroups DEBUG" `
+            --collect-all streamlit --collect-all altair --collect-all pydeck `
+            --collect-submodules app_pages `
+            --add-data "app.py;." `
+            --add-data "streamlit_config.toml;." `
+            --add-data "images;images" `
+            --add-data "data;data" `
+            launch.py
+      - name: Zip artifact (Release)
         shell: pwsh
         run: |
           Compress-Archive -Path "dist\Dog Playgroups\*" -DestinationPath "Dog_Playgroups_Windows.zip"
@@ -36,3 +50,12 @@ jobs:
         with:
           name: Dog_Playgroups_Windows_${{ github.run_number }}_${{ github.sha }}
           path: Dog_Playgroups_Windows.zip
+
+      - name: Zip artifact (Debug)
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\Dog Playgroups DEBUG\*" -DestinationPath "Dog_Playgroups_Windows_DEBUG.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dog_Playgroups_Windows_DEBUG_${{ github.run_number }}_${{ github.sha }}
+          path: Dog_Playgroups_Windows_DEBUG.zip
