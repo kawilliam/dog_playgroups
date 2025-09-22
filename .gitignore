@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+dogs.db
+dist/
+build/
+*.spec
+*.DS_Store
+images/*.jpg
+images/*.png
