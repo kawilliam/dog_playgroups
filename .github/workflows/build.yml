@@ -24,6 +24,7 @@ jobs:
             --name "Dog Playgroups" `
             --collect-all streamlit --collect-all altair --collect-all pydeck `
             --add-data "app.py;." `
+            --add-data "streamlit_config.toml;." `
             --add-data "images;images" `
             --add-data "data;data" `
             launch.py

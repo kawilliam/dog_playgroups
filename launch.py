@@ -3,6 +3,10 @@ import os, sys, os.path as p
 
 BASE = getattr(sys, "_MEIPASS", p.abspath(p.dirname(__file__)))
 APP = p.join(BASE, "app.py")
+CONFIG = p.join(BASE, "streamlit_config.toml")
+
+if p.exists(CONFIG):
+    os.environ["STREAMLIT_CONFIG_FILE"] = CONFIG
 
 os.environ.pop("STREAMLIT_SERVER_PORT", None)
 
