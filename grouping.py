@@ -1,7 +1,7 @@
 from itertools import combinations
 
 from db import fetch_df, get_conn
-from relationships import get_relationship
+from relationships_service import get_relationship
 
 def allowed_pair(a_id, b_id, rules, status, attrs):
     if status == "foe":

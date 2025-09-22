@@ -5,7 +5,7 @@ import streamlit as st
 
 from config import IMAGES_DIR
 from db import fetch_df, get_conn
-from relationships import upsert_relationship
+from relationships_service import upsert_relationship
 
 def page_dogs():
     st.header("Dogs")
